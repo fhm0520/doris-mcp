@@ -1,0 +1,30 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.log
+.env
+.env.*
+!.env.example
+.idea/
+.DS_Store
+
+# 打包产物
+dist/
+build/
+*.egg-info/
+
+# 覆盖率
+.coverage
+.coverage.*
+htmlcov/
+
+# 本地 skill 工具产物（mcp-builder 等），不入库
+.agents/
+.codebuddy/
+skills-lock.json
+
+# 评估题是本机实例的验收数据，不入版本管理
+evals/

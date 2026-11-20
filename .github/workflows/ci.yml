@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv（带上 .python-version 指定的 Python）
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version-file: ".python-version"
+
+      - name: 安装依赖
+        run: uv sync --frozen
+
+      - name: 静态检查
+        run: uv run ruff check .
+
+      - name: 单元测试（不需要数据库）
+        run: uv run pytest -q

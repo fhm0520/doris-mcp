@@ -7,30 +7,65 @@ Apache Doris 的**只读 MCP Server**，适配版本：`doris-1.2.4-1-Unknown`�
 ## 环境要求
 
 - Python **≥ 3.12**（项目已带 `.python-version`）
-- [uv](https://docs.astral.sh/uv/)（负责 Python 版本与依赖）
+- [uv](https://docs.astral.sh/uv/) 负责 Python 版本与依赖（0.13.x 已验证，装法见下）
 
 ## 初始化与运行
 
 ### 1. 安装 uv（已装可跳过）
 
+官方安装脚本（<https://docs.astral.sh/uv/getting-started/installation/>）：
+
 ```bash
-# Windows PowerShell
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+# Windows PowerShell（注意 -ExecutionPolicy ByPass，缺了会被执行策略拦住）
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 # macOS / Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 系统里没有 curl 时
+wget -qO- https://astral.sh/uv/install.sh | sh
 ```
+
+或者交给包管理器，效果一样：
+
+```bash
+winget install --id=astral-sh.uv -e    # Windows
+scoop install main/uv                  # Windows
+brew install uv                        # macOS / Linux
+pipx install uv                        # 任意平台（隔离环境，推荐纯 Python 用户）
+```
+
+装完确认（Windows 需**重开终端**，脚本会把 `%USERPROFILE%\.local\bin` 写进 PATH）：
+
+```bash
+uv --version          # 期望 0.13.x 及以上
+uv self update        # 只有脚本装的 uv 支持自更新；包管理器装的用它自己的 upgrade
+```
+
+> 下文命令都在**项目根目录**（含 `pyproject.toml`、`uv.lock` 的那一层）执行。
 
 ### 2. 初始化环境
 
 ```bash
-cd doris-mcp              # 进入本项目目录（路径随你放置的位置）
+cd doris-mcp                # 进入本项目目录（换成你克隆/解压的位置）
 
-uv python install 3.12   # 安装项目所需 Python（已有可跳过）
-uv sync                  # 创建 .venv 并按 uv.lock 安装依赖（含 dev 组）
+uv python install 3.12      # 可选：显式预装一份 3.12（不装也能跑，见下）
+uv sync --python 3.12       # 关键：用 3.12 建 .venv，并按 uv.lock 装依赖（含 dev 组）
 ```
 
-`uv sync` 会自动创建 `.venv`，不需要手动 `venv`/`pip`。如需在 shell 里直接用命令：
+`--python 3.12` 建议别省。项目里有 `.python-version`（`3.12`），`pyproject.toml` 里是
+`requires-python = ">=3.12"`，但 uv 是**按当前工作目录向上找** `.python-version` 的；
+换目录执行、或宿主的 CWD 不确定时就退化成「第一个满足 `>=3.12` 的解释器」——机器上另有
+3.13 / 3.14 或 conda 里的旧解释器时，可能选中别的版本，装出来的 `.venv` 和 `uv.lock`
+就不是同一套了。写进命令里，行为才确定，也不需要先 `uv python install`（uv 缺版本会自动下载）。
+
+确认解释器对了：
+
+```bash
+uv run python -V          # Python 3.12.x
+```
+
+`uv sync` 已经建好 `.venv`，不需要手动 `python -m venv` / `pip install`。想在 shell 里直接敲命令再激活：
 
 ```bash
 # Windows
@@ -42,8 +77,11 @@ source .venv/bin/activate
 ### 3. 配置连接
 
 ```bash
-cp .env.example .env     # 然后按实际环境改 .env
+cp .env.example .env     # 然后按实际环境改 .env；PowerShell 里 cp 是 Copy-Item 的别名，同样可用
 ```
+
+`.env` 是**按进程当前工作目录**查找的，所以在项目目录下 `uv run` 能读到它；
+换到别的目录启动就读不到了（MCP 宿主场景见下一节）。内容用 UTF-8 存，别存成 ANSI。
 
 或用 CLI 参数直连（参数优先级高于环境变量）：
 
@@ -161,19 +199,64 @@ uv run python scripts/smoke.py --db <db> --table <tbl>   # 逐个调用 17 个�
 
 ## 接入 MCP 宿主
 
-**推荐**：把 CLI 装到 PATH，配置里就不用写任何路径。在项目目录执行一次：
+两种接法任选其一：A 不用安装、改代码即生效；B 装成常驻命令。
 
-```bash
-uv tool install .          # 安装 doris-mcp 命令（依赖隔离，与项目 .venv 无关）
-doris-mcp --version        # 能打印版本即可
-```
+### 方式 A：宿主用 `uv` 拉起（推荐）
 
-stdio（Claude Desktop / Cherry Studio / Cline 等）：
+WorkBuddy / CodeBuddy 的 `~/.workbuddy/mcp.json`、Claude Code 的 `.mcp.json` 都是这个结构：
 
 ```json
 {
   "mcpServers": {
-    "doris": {
+    "doris-mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "./doris-mcp",
+        "run",
+        "--python",
+        "3.12",
+        "doris-mcp",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "DORIS_HOST": "10.0.0.10",
+        "DORIS_PORT": "9030",
+        "DORIS_USER": "readonly_user",
+        "DORIS_PASSWORD": "***",
+        "DORIS_DATABASE": "your_db"
+      }
+    }
+  }
+}
+```
+
+几处容易写错：
+
+- `--directory` 必须在 `run` **之前**，指向含 `pyproject.toml` 的项目根；`./doris-mcp` 相对的是宿主进程的工作目录，本项目不在宿主工作目录下时改成绝对路径
+- 路径用 `/`，Windows 也别写 `D:\doris-mcp`（`\d` 会被 JSON 当转义符）
+- `type` 是 WorkBuddy / CodeBuddy / Claude Code 要的，Claude Desktop 可省
+- 宿主 PATH 里未必有 `uv`；报 `spawn uv ENOENT` 就把 `command` 换成 `where uv` 查到的绝对路径
+- 首次拉起会隐式 `uv sync`（几十秒），宿主握手超时会失败；先手动 `uv sync --python 3.12`，或在 `run` 后加 `--no-sync`
+
+`--transport stdio` 是默认值，可省。`.env` 按 CWD 查找，走 `--directory` 时 CWD 就是项目根，
+所以 `.env` 照样能读到。
+
+### 方式 B：装成常驻命令
+
+```bash
+cd doris-mcp
+uv tool install . --python 3.12    # 装进 uv 工具环境，与项目 .venv 无关
+doris-mcp --version
+```
+
+```json
+{
+  "mcpServers": {
+    "doris-mcp": {
+      "type": "stdio",
       "command": "doris-mcp",
       "args": ["--transport", "stdio"],
       "env": {
@@ -188,17 +271,11 @@ stdio（Claude Desktop / Cherry Studio / Cline 等）：
 }
 ```
 
-如果不想安装，也可以让宿主用 `uv` 拉起，把 `./doris-mcp` 换成你放置本项目的相对或绝对路径：
+- 装进去的是当时的代码副本，改完要 `uv tool install . --force`
+- CWD 不是项目目录，`.env` 不生效，连接参数写进 `env`
+- 找不到命令同样换绝对路径（Windows `C:/Users/<you>/.local/bin/doris-mcp.exe`）
 
-```json
-"command": "uv",
-"args": ["--directory", "./doris-mcp", "run", "doris-mcp", "--transport", "stdio"]
-```
-
-> 宿主的启动工作目录通常不是你的 shell 目录，相对路径可能解析不到；这种情况下
-> 用上面的 `uv tool install` 方式更稳。
-
-HTTP：
+### HTTP 模式
 
 ```bash
 uv run doris-mcp --transport http --port 3000

@@ -28,3 +28,5 @@ skills-lock.json
 
 # 评估题是本机实例的验收数据，不入版本管理
 evals/
+/.serena/
+/.workbuddy/
